@@ -2,80 +2,110 @@ const axios = require('axios')
 const cheerio = require('cheerio')
 const express = require('express')
 const lodash = require('lodash')
+const open = require('open');
 const app = express()
 const cors = require('cors')
-app.use(cors())
 const mongoose = require('mongoose')
+const longjohn = require('longjohn');
+ 
+app.use(cors())
+
 const PORT = 8000
 
-const url = 'mongodb://localhost/'
+
+const MongoURL = 'mongodb://localhost:27017'
+main().catch(err => console.log(err));
+async function main() {
+  await mongoose.connect(MongoURL);
+}
 
 const categoriasURL = 'https://www.mercadolibre.com.ar/categorias#nav-header'
-
-
 async function checkCategories() {
     try {
         let response = await axios(categoriasURL);
         let html = response.data
         let $ = cheerio.load(html)
-        let categories = {}
-        let subcategories = {}
-
-
         $('.categories__container', html).each( async function () {
             let categoryName =  lodash.kebabCase(lodash.deburr($(this).find('.categories__title a').text()))
-            $(this).children().find('.categories__item').each(async function(){
+            for (const category of $(this).children().find('.categories__item')) {
                 let subcategory = lodash.kebabCase(lodash.deburr($(this).find('a').text()))
-                let subcatList
-                try {
-                    let subcategoryFetch = await axios($(this).find('a').attr('href'));
-                    console.log('CAT   ' + $(this).find('a').attr('href'))
-                    subcatList = await checkSubcategories (subcategoryFetch)
-                } catch (error) {
-                    console.log("error @ checkCategories")
-                }
-            })
-        })
-
-    } catch (error) {
-        console.log(error)
-    }
-}
-
-
-
-async function checkSubcategories (fetched){
-    let html = fetched.data
-    let subcatList = {}
-    $ = cheerio.load(html)
-    if ($('.ui-search-filter-dl .ui-search-filter-dt-title:contains("Categorías")').length) {
-        $('.ui-search-filter-dl .ui-search-filter-dt-title:contains("Categorías")').parent().children().find('.ui-search-filter-container').each( async function(){
-            let subcategoryName = lodash.kebabCase(lodash.deburr($(this).find('.ui-search-filter-name').text()))
-
-            try {
-                let url = await $(this).find('a').attr('href')
-                let fetchedData = await fetchSubcat(url) //<------ DOESN'T RETURN ANYTHING, IN FACT
-                console.log(fetchedData)                 //        IT STOPS EXECUTION ALL TOGETHER
-            } catch (error) {
-                console.log("error @ checkSubcategories")
+                let url =  $(category).find('a').attr('href')
+                checkSubcategories (url, categoryName).then().catch(
+                    console.log("checkSubcategories():  " + url)
+                )
             }
-            
         })
-
-    } else {
-        //functionThatSavesTheMostSoldLink()
+    } catch (error) {
+        console.log(">>>>>>>>>>>>>>>>>>>>>>>>>> ERROR @ CATEGORY <<<<<<<<<<<<<<<<<<<<<<<<<")
+        console.log("categoriasURL:  " + url)
+        console.log(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+        console.log()
     }
 }
 
-async function fetchSubcat(url){
-    try {
-        let subcategoryFetch = await axios(url); //<------ DOESN'T RETURN ANYTHING, IN FACT
-        let subcatList                           //        IT STOPS EXECUTION ALL TOGETHER
-        subcatList = await checkSubcategories (subcategoryFetch)
-        return subcatList
-    } catch (error) {
-        console.log('error @ fetchSubcat')
+
+
+async function checkSubcategories (url, categoryName){
+    if (typeof url === 'string'){
+        try {
+            let response = await axios(url);
+            let html = response.data
+            $ = cheerio.load(html)
+            if ($('.ui-search-filter-dl .ui-search-filter-dt-title:contains("Categorías")').length) {
+                for (const subcategory of $('.ui-search-filter-dl .ui-search-filter-dt-title:contains("Categorías")').parent().children().find('.ui-search-filter-container')){
+                    let subcategoryName = lodash.kebabCase(lodash.deburr($(subcategory).find('.ui-search-filter-name').text()))
+                    let subcategoryURL = $(subcategory).find('a').attr('href')
+                    checkSubcategories (subcategoryURL, subcategoryName).then().catch(process.stdout.write(""))
+                }
+            } else if($('.ui-search-result__wrapper .ui-search-styled-label:contains("MÁS VENDIDO")').length) {
+                let productURL = $('.ui-search-result__wrapper .ui-search-styled-label:contains("MÁS VENDIDO")').closest('.ui-search-result__wrapper').find('a').attr('href')
+                try {
+                    let response = await axios(productURL);
+                    let html = response.data
+                    $ = cheerio.load(html)
+                    
+                    console.log()
+                    if(!$('.ui-pdp-promotions-pill-label__target').attr('href')){
+                        console.log(">><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<")
+                        console.log(">><<>><<>><<>><<>><<>><<>><<>><<>><<>>checkSubcategories  URL NOT FOUND <<>><<>><<>><<>><<>><<>><<")
+                        await open('https://sindresorhus.com', {app: {name: 'firefox'}});
+                    }else{
+                        console.log("============================ MAS VENDIDO ============================")
+                        console.log($('.ui-pdp-promotions-pill-label__target').attr('href'))
+                        console.log("=====================================================================")
+                    }
+                    
+                    console.log()
+
+                } catch (error) {
+                    console.log(">>>>>>>>>>>>>>>>>>>>>>>>> ERROR @ MAS VISTO <<<<<<<<<<<<<<<<<<<<<<<<<")
+                    console.log(Object.getOwnPropertyNames(error.response.statusText));
+                    console.log(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+                    console.log()
+                }
+        
+            }else{
+                console.log("XXXXXXXXXXXXXXXXXXXXXXXXX ERROR @ CHEERIO XXXXXXXXXXXXXXXXXXXXXXXXXX")
+                console.log("            NO SE ENCONTRARON NI CATEGORIAS NI MAS VENDIDO          ")
+                console.log(url)
+                console.log("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+                console.log()
+            }
+        } catch (error) {
+            console.log(">>>>>>>>>>>>>>>>>>>>>>>> ERROR @ SUBCATEGORY <<<<<<<<<<<<<<<<<<<<<<<<")
+            //console.log(Object.getOwnPropertyNames(error));
+            console.log(error.message)
+            console.log(url)
+            console.log(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+        }
+        
     }
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
 }
 
 
@@ -87,8 +117,7 @@ checkCategories()
 
 
 app.get('/', function (req, res) {
-    checkCategories()
     res.json('Bienvenido a MasVendidosAPI - MercadoLibre Tracker')
 })
 
-app.listen(PORT, () => console.log(`server running on PORT ${PORT}`))
+
